@@ -3,9 +3,18 @@ static const char *user  = "nobody";
 static const char *group = "nogroup";
 
 static const char *colorname[NUMCOLS] = {
-	[INIT] =   "#2d2d2d",     /* after initialization */
-	[INPUT] =  "#005577",   /* during input */
-	[FAILED] = "#CC3333",   /* wrong password */
+	[BG] =   "#2d2d2d",
+	[FG] =  "#005577",
+	[C1] = "#CC3333",
+};
+
+/*
+ * Xresources preferences to load at startup
+ */
+ResourcePref resources[] = {
+		{ "color0",       STRING,  &colorname[BG] },
+		{ "color4",       STRING,  &colorname[FG] },
+		{ "color1",       STRING,  &colorname[C1] },
 };
 
 /* treat a cleared input like a wrong password (color) */
@@ -17,7 +26,7 @@ static const int monitortime = 5;
 /*Enable blur*/
 #define BLUR
 /*Set blur radius*/
-static const int blurRadius=20;
+static const int blurRadius=10;
 /*Enable Pixelation*/
 #define PIXELATION
 /*Set pixelation radius*/
@@ -28,11 +37,8 @@ static const int pixelSize=10;
 static const char * message = NULL;
 static const char * loginmessage = "locked";
 
-/* text color */
-static const char * text_color = "#ffffff";
-
 /* text size (must be a valid size) */
-static const char * font_name = "-xos4-terminus-medium-r-normal--18-180-72-72-c-100-paratype-pt154";
+static const char * font_name = "-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso8859-1";
 
 static char * censored = "*";
-static const int max_censored = 100;
+static const int max_censored = 20;

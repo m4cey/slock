@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <grp.h>
 #include <pwd.h>
 #include <stdarg.h>
@@ -23,6 +24,7 @@
 #include <X11/Xutil.h>
 #include <X11/Xft/Xft.h>
 #include <Imlib2.h>
+#include <X11/Xresource.h>
 
 #include "arg.h"
 #include "util.h"
@@ -33,11 +35,24 @@ char *argv0;
 int count_error = 0;
 
 enum {
-	INIT,
-	INPUT,
-	FAILED,
+	BG,
+	FG,
+	C1,
 	NUMCOLS
 };
+
+/* Xresources preferences */
+enum resource_type {
+	STRING = 0,
+	INTEGER = 1,
+	FLOAT = 2
+};
+
+typedef struct {
+	char *name;
+	enum resource_type type;
+	void *dst;
+} ResourcePref;
 
 #include "config.h"
 
@@ -85,13 +100,12 @@ dontkillme(void)
 #endif
 
 static void
-writemessage(Display *dpy, Window win, int screen, char *passwd)
+writemessage(Display *dpy, struct lock *lock, int screen, char *passwd)
 {
-	int len, line_len, width, height, s_width, s_height, i, j, k, tab_replace, tab_size;
+	int len, w, h, s_width, s_height, x, y, i;
 	char *text;
 	XGCValues gr_values;
 	XFontStruct *fontinfo;
-	XColor color, dummy;
 	XineramaScreenInfo *xsi;
 	GC gc;
 	fontinfo = XLoadQueryFont(dpy, font_name);
@@ -105,15 +119,6 @@ writemessage(Display *dpy, Window win, int screen, char *passwd)
 		return;
 	}
 
-	tab_size = 8 * XTextWidth(fontinfo, " ", 1);
-
-	XAllocNamedColor(dpy, DefaultColormap(dpy, screen),
-		 text_color, &color, &dummy);
-
-	gr_values.font = fontinfo->fid;
-	gr_values.foreground = color.pixel;
-	gc=XCreateGC(dpy,win,GCFont+GCForeground, &gr_values);
-
 	/*  To prevent "Uninitialized" warnings. */
 	xsi = NULL;
 
@@ -125,7 +130,6 @@ writemessage(Display *dpy, Window win, int screen, char *passwd)
 	if (!message && passwd && *passwd) {
 		len = strlen(passwd);
 		len = len < max_censored? len : max_censored;
-		len++;
 		text = censored;
 	} else if (message)
 		text = strdup(message);
@@ -134,22 +138,6 @@ writemessage(Display *dpy, Window win, int screen, char *passwd)
 
 	if (message)
 		len = strlen(text);
-
-	/* Max max line length (cut at '\n') */
-	line_len = 0;
-	k = 0;
-	for (i = j = 0; i < len; i++) {
-		if (text[i] == '\n') {
-			if (i - j > line_len)
-				line_len = i - j;
-			k++;
-			i++;
-			j = i;
-		}
-	}
-	/* If there is only one line */
-	if (line_len == 0)
-		line_len = len;
 
 	if (XineramaIsActive(dpy)) {
 		xsi = XineramaQueryScreens(dpy, &i);
@@ -160,31 +148,25 @@ writemessage(Display *dpy, Window win, int screen, char *passwd)
 		s_height = DisplayHeight(dpy, screen);
 	}
 
-	height = s_height/2 - (k*20)/3;
-	width = (s_width - XTextWidth(fontinfo, text, line_len))/2;
-	/* Look for '\n' and print the text between them. */
-	for (i = j = k = 0; i <= len; i++) {
-		/* i == len is the special case for the last line */
-		if (i == len || text[i] == '\n') {
-			tab_replace = 0;
-			while (text[j] == '\t' && j < i) {
-				tab_replace++;
-				j++;
-			}
+	h = fontinfo->ascent + fontinfo->descent + 2;
+	w = XTextWidth(fontinfo, text, max_censored) + 18;
+	x = (s_width - XTextWidth(fontinfo, text, len))/2;
+	y = s_height/2 - h/2;
 
-			XDrawString(dpy, win, gc, width + tab_size*tab_replace, height + 20*k, text + j, i - j);
-			while (i < len && text[i] == '\n') {
-				i++;
-				j = i;
-				k++;
-			}
-		}
-	}
+	gr_values.font = fontinfo->fid;
+	gr_values.foreground = lock->colors[BG];
+	gr_values.line_width = 2;
+	gc=XCreateGC(dpy,lock->win,GCFont|GCForeground|GCLineWidth, &gr_values);
+	XFillRectangle(dpy, lock->win, gc, s_width/2 - w /2, s_height/2 - h/2, w, h);
+	gr_values.foreground = lock->colors[FG];
+	XChangeGC(dpy, gc, GCForeground, &gr_values);
+	XDrawRectangle(dpy, lock->win, gc, s_width/2 - w /2, s_height/2 - h/2, w, h);
+	XDrawString(dpy, lock->win, gc, x, y + h - 4, text, len);
 
 	/* xsi should not be NULL anyway if Xinerama is active, but to be safe */
 	if (XineramaIsActive(dpy) && xsi != NULL)
 			XFree(xsi);
-	if (message)
+	if (message && text)
 		free(text);
 }
 
@@ -237,15 +219,13 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 {
 	XRRScreenChangeNotifyEvent *rre;
 	char buf[32], passwd[256], *inputhash;
-	int num, screen, running, failure, oldc;
-	unsigned int len, color;
+	int num, screen, running;
+	unsigned int len;
 	KeySym ksym;
 	XEvent ev;
 
 	len = 0;
 	running = 1;
-	failure = 0;
-	oldc = INIT;
 
 	while (running && !XNextEvent(dpy, &ev)) {
 		if (ev.type == KeyPress) {
@@ -273,7 +253,6 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 						running = !!strcmp(inputhash, hash);
 					if (running) {
 						//XBell(dpy, 100);
-						failure = 1;
 					}
 					explicit_bzero(&passwd, sizeof(passwd));
 					len = 0;
@@ -294,15 +273,13 @@ readpw(Display *dpy, struct xrandr *rr, struct lock **locks, int nscreens,
 					}
 					break;
 			}
-			color = len ? INPUT : ((failure || failonclear) ? FAILED : INIT);
 			if (running) {
 				for (screen = 0; screen < nscreens; screen++) {
 					XClearWindow(dpy, locks[screen]->win);
 					if(locks[screen]->bgmap)
 						XSetWindowBackgroundPixmap(dpy, locks[screen]->win, locks[screen]->bgmap);
-					writemessage(dpy, locks[screen]->win, screen, passwd);
+					writemessage(dpy, locks[screen], screen, passwd);
 				}
-				oldc = oldc != color? color : oldc;
 			}
 		} else if (rr->active && ev.type == rr->evbase + RRScreenChangeNotify) {
 			rre = (XRRScreenChangeNotifyEvent*)&ev;
@@ -361,7 +338,7 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 
 	/* init */
 	wa.override_redirect = 1;
-	wa.background_pixel = lock->colors[INIT];
+	wa.background_pixel = lock->colors[BG];
 	lock->win = XCreateWindow(dpy, lock->root, 0, 0,
 	                          DisplayWidth(dpy, lock->screen),
 	                          DisplayHeight(dpy, lock->screen),
@@ -396,7 +373,6 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 				XRRSelectInput(dpy, lock->win, RRScreenChangeNotifyMask);
 
 			XSelectInput(dpy, lock->root, SubstructureNotifyMask);
-			//drawlogo(dpy, lock, INIT);
 			return lock;
 		}
 
@@ -416,6 +392,57 @@ lockscreen(Display *dpy, struct xrandr *rr, int screen)
 		fprintf(stderr, "slock: unable to grab keyboard for screen %d\n",
 		        screen);
 	return NULL;
+}
+
+int
+resource_load(XrmDatabase db, char *name, enum resource_type rtype, void *dst)
+{
+	char **sdst = dst;
+	int *idst = dst;
+	float *fdst = dst;
+
+	char fullname[256];
+	char fullclass[256];
+	char *type;
+	XrmValue ret;
+
+	snprintf(fullname, sizeof(fullname), "%s.%s", "slock", name);
+	snprintf(fullclass, sizeof(fullclass), "%s.%s", "Slock", name);
+	fullname[sizeof(fullname) - 1] = fullclass[sizeof(fullclass) - 1] = '\0';
+
+	XrmGetResource(db, fullname, fullclass, &type, &ret);
+	if (ret.addr == NULL || strncmp("String", type, 64))
+		return 1;
+
+	switch (rtype) {
+	case STRING:
+		*sdst = ret.addr;
+		break;
+	case INTEGER:
+		*idst = strtoul(ret.addr, NULL, 10);
+		break;
+	case FLOAT:
+		*fdst = strtof(ret.addr, NULL);
+		break;
+	}
+	return 0;
+}
+
+void
+config_init(Display *dpy)
+{
+	char *resm;
+	XrmDatabase db;
+	ResourcePref *p;
+
+	XrmInitialize();
+	resm = XResourceManagerString(dpy);
+	if (!resm)
+		return;
+
+	db = XrmGetStringDatabase(resm);
+	for (p = resources; p < resources + LEN(resources); p++)
+		resource_load(db, p->name, p->type, p->dst);
 }
 
 static void
@@ -544,6 +571,9 @@ main(int argc, char **argv) {
 
 
 #endif
+
+	config_init(dpy);
+
 	/* check for Xrandr support */
 	rr.active = XRRQueryExtension(dpy, &rr.evbase, &rr.errbase);
 
@@ -553,7 +583,7 @@ main(int argc, char **argv) {
 		die("slock: out of memory\n");
 	for (nlocks = 0, s = 0; s < nscreens; s++) {
 		if ((locks[s] = lockscreen(dpy, &rr, s)) != NULL) {
-			writemessage(dpy, locks[s]->win, s, NULL);
+			writemessage(dpy, locks[s], s, NULL);
 			nlocks++;
 		} else {
 			break;
@@ -594,12 +624,10 @@ main(int argc, char **argv) {
 	}
 
 	char c = censored[0];
-	if (!(censored = ecalloc(1, 256)))
+	if (!(censored = ecalloc(1, max_censored + 1)))
 		die("failed to alloced 'censored'");
-	memset(censored, c, max_censored + 1);
+	memset(censored, c, max_censored);
 	censored[max_censored] = '\0';
-	for (int k = 0; k < max_censored; k += 40)
-		censored[k] = '\n';
 	/* everything is now blank. Wait for the correct password */
 	readpw(dpy, &rr, locks, nscreens, hash);
 
