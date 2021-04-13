@@ -148,7 +148,7 @@ writemessage(Display *dpy, struct lock *lock, int screen, char *passwd)
 		s_height = DisplayHeight(dpy, screen);
 	}
 
-	h = fontinfo->ascent + fontinfo->descent + 2;
+	h = fontinfo->ascent + fontinfo->descent + 4;
 	w = XTextWidth(fontinfo, text, max_censored) + 18;
 	x = (s_width - XTextWidth(fontinfo, text, len))/2;
 	y = s_height/2 - h/2;
