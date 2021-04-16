@@ -22,3 +22,9 @@ Afterwards enter the following command to build and install slock
 Running slock
 -------------
 Simply invoke the 'slock' command. To get out of it, enter your password.
+
+##Changes: 
+*removed color indications 
+*read xresources
+*screen dpms
+*and a dmenu style password input
