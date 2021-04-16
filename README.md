@@ -26,9 +26,9 @@ Simply invoke the 'slock' command. To get out of it, enter your password.
 Changes:
 --------
 - removed color indications
-
 - read xresources
 - screen dpms
+- screenshot as background +(blur, pixelate)
 - dmenu theme (customize in function `writemessage`)
 
 ![2021-04-16-161706_1600x900_scrot](https://user-images.githubusercontent.com/79314304/115055368-df334f00-9ed0-11eb-9ba8-196a084ebfee.png)
