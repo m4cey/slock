@@ -157,6 +157,9 @@ writemessage(Display *dpy, struct lock *lock, int screen, char *passwd)
 	gr_values.foreground = lock->colors[BG];
 	gr_values.line_width = 2;
 	gc=XCreateGC(dpy,lock->win,GCFont|GCForeground|GCLineWidth, &gr_values);
+	int s_off = 6;
+	s_off += gr_values.line_width;
+	XFillRectangle(dpy, lock->win, gc, s_width/2 - w /2 + s_off, s_height/2 - h/2 + s_off, w, h);
 	XFillRectangle(dpy, lock->win, gc, s_width/2 - w /2, s_height/2 - h/2, w, h);
 	gr_values.foreground = lock->colors[FG];
 	XChangeGC(dpy, gc, GCForeground, &gr_values);
