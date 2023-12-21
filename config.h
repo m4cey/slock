@@ -37,8 +37,6 @@ static const int pixelSize=10;
 static const char * message = NULL;
 static const char * loginmessage = "locked";
 
-/* text size (must be a valid size) */
-static const char * font_name = "-xos4-terminus-medium-r-normal--14-140-72-72-c-80-iso8859-1";
-
+static const char * font_name = "";
 static char * censored = "*";
 static const int max_censored = 20;
